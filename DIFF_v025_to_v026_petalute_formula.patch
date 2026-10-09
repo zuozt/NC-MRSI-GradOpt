@@ -1,0 +1,412 @@
+diff -ruN /mnt/data/nc_work/NC_MRSI_GradOpt_GUI_v0.2.5_periodic_solver/PATCH_NOTES_PETALUTE_FORMULA_v0.2.6_CN.md /mnt/data/NC_MRSI_GradOpt_GUI_v0.2.6_petalute_formula/PATCH_NOTES_PETALUTE_FORMULA_v0.2.6_CN.md
+--- /mnt/data/nc_work/NC_MRSI_GradOpt_GUI_v0.2.5_periodic_solver/PATCH_NOTES_PETALUTE_FORMULA_v0.2.6_CN.md	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/NC_MRSI_GradOpt_GUI_v0.2.6_petalute_formula/PATCH_NOTES_PETALUTE_FORMULA_v0.2.6_CN.md	2026-07-05 09:45:16.972699639 +0000
+@@ -0,0 +1,98 @@
++# NC_MRSI_GradOpt_GUI v0.2.6 PETALUTE rosette 公式修正
++
++本版本继续基于 `NC_MRSI_GradOpt_GUI_v0.2.0` 原框架修改，只修正周期性 rosette target k 的数学公式和 GUI 参数，不替换原 GUI 结构。
++
++## 1. 修正原因
++
++v0.2.5 中周期 rosette target 使用了临时工程形式：
++
++```matlab
++q = Kmax * sin(pi*u).^2;
++theta = 2*pi*u + beta;
++```
++
++这个形式不是参考文献 PETALUTE 的公式，因此生成的 target k 与文献不一致。
++
++## 2. 参考文献公式
++
++PETALUTE 3D rosette target 采用：
++
++```matlab
++Kxy(t) = Kmax*cos(phi) * sin(omega1*t) * exp(1i*(omega2*t + beta));
++Kz(t)  = Kmax*sin(phi) * sin(omega1*t);
++```
++
++其中：
++
++```matlab
++SBW = 1 / (Npp * dt);
++omega1 = omega2 = pi * SBW;
++```
++
++在单周期归一化变量：
++
++```matlab
++u = t / Tperiod,   Tperiod = Npp * dt
++```
++
++下，默认一个周期 target 为：
++
++```matlab
++radial = sin(pi*u);
++theta  = pi*u + beta;
++
++kx = Kmax*cos(phi)*radial*cos(theta);
++ky = Kmax*cos(phi)*radial*sin(theta);
++kz = Kmax*sin(phi)*radial;
++```
++
++注意：这里不是 `sin(pi*u)^2`，也不是 `sin(2*pi*u)`。
++
++## 3. Npp 的定义
++
++`Npp` 仍然是一个完整 rosette period / petal 内的采样点数：
++
++```matlab
++Npp = points per period
++```
++
++程序返回的是 `u = 0, 1/Npp, ..., (Npp-1)/Npp` 的 Npp 个唯一采样点，不包含 `u=1` 的重复终点。下一个周期的第一个点就是 `u=0`。
++
++对于 PETALUTE-like 参数：
++
++```matlab
++Npp = 96;
++dt = 5e-6;
++Tperiod = 480e-6;
++SBW = 2083.333 Hz;
++omega1 = omega2 = pi * SBW;
++```
++
++## 4. 修改文件
++
++主要修改：
++
++```text
++trajectories/make_periodic_rosette_2d.m
++trajectories/make_periodic_rosette_3d.m
++gui/nc_mrsi_gradopt_gui.m
++```
++
++GUI 新增：
++
++```text
++Initial beta (deg)
++```
++
++用于文献公式中的 `beta` 初始角度。
++
++## 5. 保留内容
++
++仍然保留 v0.2.5 的周期优化结构：
++
++```matlab
++只优化一个周期 G_period: Npp x 3
++完整 readout = repmat(G_period, [Nspec, 1])
++```
++
++即 target 公式修正为 PETALUTE，但优化仍然是周期性 MRSI 的 compact-period 方案。
+diff -ruN /mnt/data/nc_work/NC_MRSI_GradOpt_GUI_v0.2.5_periodic_solver/VERSION.txt /mnt/data/NC_MRSI_GradOpt_GUI_v0.2.6_petalute_formula/VERSION.txt
+--- /mnt/data/nc_work/NC_MRSI_GradOpt_GUI_v0.2.5_periodic_solver/VERSION.txt	2026-07-05 08:16:42.000000000 +0000
++++ /mnt/data/NC_MRSI_GradOpt_GUI_v0.2.6_petalute_formula/VERSION.txt	2026-07-05 09:45:16.980857645 +0000
+@@ -1 +1 @@
+-0.2.5-periodic-solver
++0.2.6-petalute-formula
+diff -ruN /mnt/data/nc_work/NC_MRSI_GradOpt_GUI_v0.2.5_periodic_solver/docs/PETALUTE_REFERENCE_FORMULA_CN.md /mnt/data/NC_MRSI_GradOpt_GUI_v0.2.6_petalute_formula/docs/PETALUTE_REFERENCE_FORMULA_CN.md
+--- /mnt/data/nc_work/NC_MRSI_GradOpt_GUI_v0.2.5_periodic_solver/docs/PETALUTE_REFERENCE_FORMULA_CN.md	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/NC_MRSI_GradOpt_GUI_v0.2.6_petalute_formula/docs/PETALUTE_REFERENCE_FORMULA_CN.md	2026-07-05 09:45:16.979751730 +0000
+@@ -0,0 +1,64 @@
++# PETALUTE 3D rosette 参考公式
++
++本工具箱周期性 rosette target 的默认形式采用 PETALUTE 31P-MRSI 文献中的公式：
++
++\[
++K_{xy}(t)=K_x(t)+iK_y(t)=K_{max}\cos(\phi)\sin(\omega_1 t)e^{i(\omega_2 t + \beta)}
++\]
++
++\[
++K_z(t)=K_{max}\sin(\phi)\sin(\omega_1 t)
++\]
++
++其中：
++
++\[
++\omega_1=\omega_2=\pi \cdot SBW
++\]
++
++\[
++SBW = \frac{1}{N_{pp}\Delta t}
++\]
++
++因此在一个周期内：
++
++\[
++T_{period}=N_{pp}\Delta t
++\]
++
++令：
++
++\[
++u=t/T_{period}
++\]
++
++则：
++
++\[
++\omega_1 t=\omega_2 t=\pi u
++\]
++
++程序实际实现为：
++
++```matlab
++u = (0:Npp-1).' / Npp;
++radial = sin(pi*u);
++theta  = pi*u + beta;
++
++kx = Kmax*cos(phi).*radial.*cos(theta);
++ky = Kmax*cos(phi).*radial.*sin(theta);
++kz = Kmax*sin(phi).*radial;
++```
++
++这里没有包含 `u=1` 的重复终点，因为下一周期的第一个采样点就是 `u=0`。
++
++## 与旧版本区别
++
++旧版临时 target：
++
++```matlab
++radial = sin(pi*u).^2;
++theta  = 2*pi*u + beta;
++```
++
++该形式不是 PETALUTE 文献公式，只是工程上平滑的 center-out-center 包络。v0.2.6 已将默认 rosette target 改回文献公式。
+diff -ruN /mnt/data/nc_work/NC_MRSI_GradOpt_GUI_v0.2.5_periodic_solver/gui/nc_mrsi_gradopt_gui.m /mnt/data/NC_MRSI_GradOpt_GUI_v0.2.6_petalute_formula/gui/nc_mrsi_gradopt_gui.m
+--- /mnt/data/nc_work/NC_MRSI_GradOpt_GUI_v0.2.5_periodic_solver/gui/nc_mrsi_gradopt_gui.m	2026-07-05 08:16:13.000000000 +0000
++++ /mnt/data/NC_MRSI_GradOpt_GUI_v0.2.6_petalute_formula/gui/nc_mrsi_gradopt_gui.m	2026-07-05 09:45:00.106137066 +0000
+@@ -1,11 +1,12 @@
+ function nc_mrsi_gradopt_gui()
+ %NC_MRSI_GRADOPT_GUI Interactive GUI for NC-MRSI-GradOpt.
+ %
+-% v0.2.5 periodic-MRSI solver correction:
+-%   Npp is the number of points in ONE complete spatial trajectory period.
+-%   Nspec is the number of repeated periods and is the spectral/FID dimension.
+-%   ADC dwell samples points within the period; spectral BW = 1/(Npp*dwell).
+-%   The optimizer optimizes the compact period and repeats it for MRSI.
++% v0.2.6 PETALUTE target correction:
++%   Periodic rosette target uses the reference PETALUTE formula:
++%   Kxy = Kmax*cos(phi)*sin(omega1*t)*exp(i*(omega2*t+beta));
++%   Kz  = Kmax*sin(phi)*sin(omega1*t), with omega1=omega2=pi*SBW.
++%   Npp is the number of points in ONE spatial trajectory period, and Nspec
++%   is the number of repeated periods/FID spectral points.
+ 
+ rootDir = fileparts(fileparts(mfilename('fullpath')));
+ addpath(genpath(rootDir));
+@@ -18,7 +19,7 @@
+ state.lastFull = [];
+ state.lastConfig = [];
+ 
+-fig = figure('Name','NC-MRSI-GradOpt GUI v0.2.5 periodic solver', ...
++fig = figure('Name','NC-MRSI-GradOpt GUI v0.2.6 PETALUTE formula', ...
+     'NumberTitle','off', ...
+     'MenuBar','none', ...
+     'ToolBar','figure', ...
+@@ -76,6 +77,7 @@
+ handles.nRadial = addEdit('Radial oscillations/period', '1');
+ handles.nAngular = addEdit('Angular rotations/period', '1');
+ handles.phiDeg = addEdit('Out-of-plane phi (deg)', '20');
++handles.betaDeg = addEdit('Initial beta (deg)', '0');
+ handles.workspaceVar = addEdit('Workspace ktraj variable', 'ktraj');
+ handles.loadCsvBtn = addButton('Load ktraj CSV...', @onLoadCsv);
+ 
+@@ -245,7 +247,7 @@
+             guidata(fig, handles);
+             plotTarget(ktraj, preview, cfg);
+             setReport(reportFromTarget(ktraj, preview, cfg));
+-            setStatus('One compact period generated. Npp is one period; target is not repeated for display/optimization.');
++            setStatus('One compact PETALUTE period generated with reference formula; target is not repeated for display/optimization.');
+         catch ME
+             showError(ME);
+         end
+@@ -410,6 +412,7 @@
+         cfg.nRadial = readPositiveDouble(handles.nRadial, 'Radial oscillations');
+         cfg.nAngular = readPositiveDouble(handles.nAngular, 'Angular rotations');
+         cfg.phiDeg = readDouble(handles.phiDeg, 'Phi');
++        cfg.betaDeg = readDouble(handles.betaDeg, 'Beta');
+         cfg.workspaceVar = strtrim(get(handles.workspaceVar, 'String'));
+         cfg.Gmax_mTm = readPositiveDouble(handles.Gmax, 'Gmax');
+         cfg.Smax = readPositiveDouble(handles.Smax, 'Smax');
+@@ -456,7 +459,7 @@
+         switch cfg.trajType
+             case 'Rosette 2D'
+                 if cfg.periodicMrsi
+-                    p.Npp = N; p.Kmax = cfg.Kmax; p.nRadial = cfg.nRadial; p.nAngular = cfg.nAngular; p.shape = 'smooth_petal';
++                    p.Npp = N; p.Kmax = cfg.Kmax; p.nRadial = cfg.nRadial; p.nAngular = cfg.nAngular; p.beta = cfg.betaDeg*pi/180; p.shape = 'petalute_paper';
+                     ktraj = make_periodic_rosette_2d(p);
+                 else
+                     p.N = N; p.Kmax = cfg.Kmax; p.nRadial = cfg.nRadial; p.nAngular = cfg.nAngular;
+@@ -464,7 +467,7 @@
+                 end
+             case 'Rosette 3D'
+                 if cfg.periodicMrsi
+-                    p.Npp = N; p.Kmax = cfg.Kmax; p.nRadial = cfg.nRadial; p.nAngular = cfg.nAngular; p.phi = cfg.phiDeg*pi/180; p.shape = 'smooth_petal';
++                    p.Npp = N; p.Kmax = cfg.Kmax; p.nRadial = cfg.nRadial; p.nAngular = cfg.nAngular; p.phi = cfg.phiDeg*pi/180; p.beta = cfg.betaDeg*pi/180; p.shape = 'petalute_paper';
+                     ktraj = make_periodic_rosette_3d(p);
+                 else
+                     p.N = N; p.Kmax = cfg.Kmax; p.nRadial = cfg.nRadial; p.nAngular = cfg.nAngular; p.phi = cfg.phiDeg*pi/180;
+diff -ruN /mnt/data/nc_work/NC_MRSI_GradOpt_GUI_v0.2.5_periodic_solver/trajectories/make_periodic_rosette_2d.m /mnt/data/NC_MRSI_GradOpt_GUI_v0.2.6_petalute_formula/trajectories/make_periodic_rosette_2d.m
+--- /mnt/data/nc_work/NC_MRSI_GradOpt_GUI_v0.2.5_periodic_solver/trajectories/make_periodic_rosette_2d.m	2026-07-05 08:15:27.000000000 +0000
++++ /mnt/data/NC_MRSI_GradOpt_GUI_v0.2.6_petalute_formula/trajectories/make_periodic_rosette_2d.m	2026-07-05 09:44:49.935491948 +0000
+@@ -1,15 +1,25 @@
+ function ktraj = make_periodic_rosette_2d(params)
+-%MAKE_PERIODIC_ROSETTE_2D Generate ONE compact 2D rosette period for MRSI.
+-% Returns Npp unique samples over [0,Tperiod), without duplicated endpoint.
+-% Default shape uses q(u)=sin(pi*u)^2 to avoid the signed-sine two-lobe
+-% appearance when the user intends one spatial period.
++%MAKE_PERIODIC_ROSETTE_2D Generate ONE compact 2D PETALUTE rosette period.
++%
++% 2D projection of the PETALUTE reference formula:
++%
++%   Kxy(t) = Kmax * sin(omega1*t) * exp(i*(omega2*t + beta))
++%
++% with omega1 = omega2 = pi*SBW and SBW = 1/(Npp*dt).  In normalized one-period
++% coordinates u=t/Tperiod:
++%
++%   kx = Kmax*sin(pi*u)*cos(pi*u + beta)
++%   ky = Kmax*sin(pi*u)*sin(pi*u + beta)
++%
++% The Npp samples are unique samples in [0,Tperiod); the duplicated endpoint at
++% u=1 is omitted because it is the first point of the next repeated period.
+ 
+ Npp = getp(params, 'Npp', getp(params, 'N', 96));
+ Kmax = getp(params, 'Kmax', 25);
+ nRadial = getp(params, 'nRadial', 1);
+ nAngular = getp(params, 'nAngular', 1);
+-phase = getp(params, 'phase', 0);
+-shape = getp(params, 'shape', 'smooth_petal');
++beta = getp(params, 'beta', getp(params, 'phase', 0));
++shape = getp(params, 'shape', 'petalute_paper');
+ 
+ Npp = round(Npp);
+ if Npp < 4
+@@ -17,18 +27,23 @@
+ end
+ 
+ u = (0:Npp-1).' / Npp;
++
+ switch lower(shape)
+-    case {'smooth_petal','sin2','sin_squared'}
+-        q = Kmax * sin(pi*nRadial*u).^2;
+-    case {'signed_sine','paper_signed'}
+-        q = Kmax * sin(2*pi*nRadial*u);
++    case {'petalute_paper','paper','reference','reference_formula'}
++        radial = sin(pi*nRadial*u);
++        theta = pi*nAngular*u + beta;
++    case {'legacy_sin2','smooth_petal','sin2','sin_squared'}
++        radial = sin(pi*nRadial*u).^2;
++        theta = 2*pi*nAngular*u + beta;
++    case {'legacy_signed_2pi','signed_sine','paper_signed'}
++        radial = sin(2*pi*nRadial*u);
++        theta = 2*pi*nAngular*u + beta;
+     otherwise
+         error('Unknown periodic rosette shape: %s', shape);
+ end
+ 
+-theta = 2*pi*nAngular*u + phase;
+-kx = q .* cos(theta);
+-ky = q .* sin(theta);
++kx = Kmax .* radial .* cos(theta);
++ky = Kmax .* radial .* sin(theta);
+ ktraj = [kx, ky];
+ end
+ 
+diff -ruN /mnt/data/nc_work/NC_MRSI_GradOpt_GUI_v0.2.5_periodic_solver/trajectories/make_periodic_rosette_3d.m /mnt/data/NC_MRSI_GradOpt_GUI_v0.2.6_petalute_formula/trajectories/make_periodic_rosette_3d.m
+--- /mnt/data/nc_work/NC_MRSI_GradOpt_GUI_v0.2.5_periodic_solver/trajectories/make_periodic_rosette_3d.m	2026-07-05 08:15:27.000000000 +0000
++++ /mnt/data/NC_MRSI_GradOpt_GUI_v0.2.6_petalute_formula/trajectories/make_periodic_rosette_3d.m	2026-07-05 09:44:49.935176999 +0000
+@@ -1,52 +1,68 @@
+ function ktraj = make_periodic_rosette_3d(params)
+-%MAKE_PERIODIC_ROSETTE_3D Generate ONE compact 3D rosette period for MRSI.
++%MAKE_PERIODIC_ROSETTE_3D Generate ONE compact 3D PETALUTE rosette period.
+ %
+-% This function returns Npp UNIQUE samples over one periodic interval
+-% [0, Tperiod). It does NOT include the duplicated endpoint at u=1.
++% This function implements the reference PETALUTE formula used for 31P-MRSI:
+ %
+-% The default periodic-MRSI rosette uses a non-negative smooth envelope
+-% q(u)=sin(pi*u)^2 so the displayed target is one compact period, not two
+-% positive/negative radial half-cycles.
++%   Kxy(t) = Kx(t) + i*Ky(t)
++%          = Kmax*cos(phi) * sin(omega1*t) * exp(i*(omega2*t + beta))
++%   Kz(t)  = Kmax*sin(phi) * sin(omega1*t)
+ %
+-% kx = Kmax*q(u)*cos(phi)*cos(theta)
+-% ky = Kmax*q(u)*cos(phi)*sin(theta)
+-% kz = Kmax*q(u)*sin(phi)
++% with omega1 = omega2 = pi*SBW and SBW = 1/(Npp*dt).  In normalized one-period
++% coordinates u=t/Tperiod, the default paper formula is:
+ %
+-% Full MRSI readout is generated outside this function by repeating this
+-% compact period Nspec times.
++%   radial_phase  = pi*u
++%   angular_phase = pi*u + beta
++%
++% The returned samples are the Npp unique ADC samples in [0,Tperiod), i.e.
++% u = 0, 1/Npp, ..., (Npp-1)/Npp.  The duplicated endpoint at u=1 is not included;
++% the next repeated period starts again from k-space center.
++%
++% params fields:
++%   .Npp or .N     number of samples in one period
++%   .Kmax          maximum k-space radius, cycles/m
++%   .phi           z-plane angle, rad
++%   .beta or .phase initial angular phase, rad
++%   .nRadial       multiplier for omega1, default 1
++%   .nAngular      multiplier for omega2, default 1
++%   .shape         'petalute_paper' [default], 'legacy_sin2', or 'legacy_signed_2pi'
+ 
+ Npp = getp(params, 'Npp', getp(params, 'N', 96));
+ Kmax = getp(params, 'Kmax', 25);
+ nRadial = getp(params, 'nRadial', 1);
+ nAngular = getp(params, 'nAngular', 1);
+ phi = getp(params, 'phi', 0);
+-phase = getp(params, 'phase', 0);
+-shape = getp(params, 'shape', 'smooth_petal');
++beta = getp(params, 'beta', getp(params, 'phase', 0));
++shape = getp(params, 'shape', 'petalute_paper');
+ 
+ Npp = round(Npp);
+ if Npp < 4
+     error('Npp must be at least 4 for a periodic rosette period.');
+ end
+ 
+-% Unique periodic samples: 0, 1/Npp, ..., (Npp-1)/Npp.
++% Unique samples in one period.  Do not include u=1 because that is the first
++% sample of the next repeated period.
+ u = (0:Npp-1).' / Npp;
+ 
+ switch lower(shape)
+-    case {'smooth_petal','sin2','sin_squared'}
+-        % One smooth center-out-center petal per radial oscillation.
+-        q = Kmax * sin(pi*nRadial*u).^2;
+-    case {'signed_sine','paper_signed'}
+-        % Signed sine is kept as an option for formula comparison; it can look
+-        % like two lobes in k-space and is not the default GUI mode.
+-        q = Kmax * sin(2*pi*nRadial*u);
++    case {'petalute_paper','paper','reference','reference_formula'}
++        radial = sin(pi*nRadial*u);
++        theta = pi*nAngular*u + beta;
++    case {'legacy_sin2','smooth_petal','sin2','sin_squared'}
++        % Older engineering envelope.  Kept only for comparison; not the paper formula.
++        radial = sin(pi*nRadial*u).^2;
++        theta = 2*pi*nAngular*u + beta;
++    case {'legacy_signed_2pi','signed_sine','paper_signed'}
++        % Older signed 2*pi implementation.  This is not the PETALUTE equation.
++        radial = sin(2*pi*nRadial*u);
++        theta = 2*pi*nAngular*u + beta;
+     otherwise
+         error('Unknown periodic rosette shape: %s', shape);
+ end
+ 
+-theta = 2*pi*nAngular*u + phase;
+-kx = q .* cos(phi) .* cos(theta);
+-ky = q .* cos(phi) .* sin(theta);
+-kz = q .* sin(phi);
++amp_xy = Kmax * cos(phi) .* radial;
++kx = amp_xy .* cos(theta);
++ky = amp_xy .* sin(theta);
++kz = (Kmax * sin(phi)) .* radial;
+ ktraj = [kx, ky, kz];
+ end
+ 

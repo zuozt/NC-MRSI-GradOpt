@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+title: "NC-MRSI GradOpt GUI"
+message: "If you use this toolbox, please cite the associated method paper or repository."
+type: software
+authors:
+  - family-names: "Zhentao"
+    given-names: "Zuo"
+version: "0.3.8"
+date-released: "2026-07-25"
+license: "proprietary-or-see-LICENSE"

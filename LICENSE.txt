@@ -1,0 +1,5 @@
+Research prototype license
+
+This toolbox is provided as a research prototype for non-Cartesian MRSI gradient waveform optimization and sequence-development testing.
+
+No warranty is provided. The user is responsible for verifying scanner-specific gradient units, gradient raster, slew-rate limits, RF/ADC timing, and safety constraints before any experimental or clinical use.

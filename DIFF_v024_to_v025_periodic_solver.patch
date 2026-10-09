@@ -1,0 +1,464 @@
+Only in /mnt/data/NC_MRSI_GradOpt_GUI_v0.2.5_periodic_solver: DIFF_v024_to_v025_periodic_solver.patch
+Only in /mnt/data/NC_MRSI_GradOpt_GUI_v0.2.5_periodic_solver: PATCH_NOTES_PERIODIC_SOLVER_v0.2.5_CN.md
+diff -ru /mnt/data/NC_MRSI_GradOpt_GUI_v0.2.4_periodic_core/VERSION.txt /mnt/data/NC_MRSI_GradOpt_GUI_v0.2.5_periodic_solver/VERSION.txt
+--- /mnt/data/NC_MRSI_GradOpt_GUI_v0.2.4_periodic_core/VERSION.txt	2026-07-05 08:05:37.684068459 +0000
++++ /mnt/data/NC_MRSI_GradOpt_GUI_v0.2.5_periodic_solver/VERSION.txt	2026-07-05 08:16:42.253047750 +0000
+@@ -1 +1 @@
+-NC-MRSI-GradOpt v0.2.4-periodic-core
++0.2.5-periodic-solver
+Only in /mnt/data/NC_MRSI_GradOpt_GUI_v0.2.5_periodic_solver/core: integrate_periodic_gradient_samples.m
+diff -ru /mnt/data/NC_MRSI_GradOpt_GUI_v0.2.4_periodic_core/core/parse_options.m /mnt/data/NC_MRSI_GradOpt_GUI_v0.2.5_periodic_solver/core/parse_options.m
+--- /mnt/data/NC_MRSI_GradOpt_GUI_v0.2.4_periodic_core/core/parse_options.m	2026-07-05 08:03:43.165053043 +0000
++++ /mnt/data/NC_MRSI_GradOpt_GUI_v0.2.5_periodic_solver/core/parse_options.m	2026-07-05 08:15:42.245838014 +0000
+@@ -50,6 +50,12 @@
+ opts.resampleMethod = getfield_default(opt, 'resampleMethod', 'linear');
+ opts.k0 = getfield_default(opt, 'k0', []);
+ opts.verbose = getfield_default(opt, 'verbose', true);
++opts.periodic = getfield_default(opt, 'periodic', false);
++opts.Npp = getfield_default(acq, 'Npp', []);
++if isempty(opts.Npp)
++    opts.Npp = getfield_default(opt, 'Npp', []);
++end
++opts.forceGPeriodicEqual = getfield_default(opt, 'forceGPeriodicEqual', true);
+ 
+ opts.Guse = opts.Gmax * opts.safetyMargin;
+ opts.Suse = opts.Smax * opts.safetyMargin;
+@@ -61,8 +67,21 @@
+     error('Invalid ADC timing.');
+ end
+ 
+-opts.nGrad = round(opts.readoutTime / opts.dtGrad) + 1;
+-opts.readoutTime = (opts.nGrad - 1) * opts.dtGrad;
++if opts.periodic
++    if isempty(opts.Npp)
++        opts.Npp = opts.nADC;
++    end
++    opts.Npp = round(opts.Npp);
++    opts.nGrad = opts.Npp;
++    opts.nADC = opts.Npp;
++    % One compact periodic interval contains Npp gradient/ADC samples.
++    % The repeated waveform period is Npp*dtGrad; the Npp-th gradient
++    % interval closes the trajectory to the first sample of the next period.
++    opts.readoutTime = opts.Npp * opts.dtGrad;
++else
++    opts.nGrad = round(opts.readoutTime / opts.dtGrad) + 1;
++    opts.readoutTime = (opts.nGrad - 1) * opts.dtGrad;
++end
+ end
+ 
+ function value = getfield_default(s, name, defaultValue)
+Only in /mnt/data/NC_MRSI_GradOpt_GUI_v0.2.5_periodic_solver/core: periodic_fixed_duration_optimize.m
+diff -ru /mnt/data/NC_MRSI_GradOpt_GUI_v0.2.4_periodic_core/core/validate_solution.m /mnt/data/NC_MRSI_GradOpt_GUI_v0.2.5_periodic_solver/core/validate_solution.m
+--- /mnt/data/NC_MRSI_GradOpt_GUI_v0.2.4_periodic_core/core/validate_solution.m	2026-07-05 08:03:43.167288429 +0000
++++ /mnt/data/NC_MRSI_GradOpt_GUI_v0.2.5_periodic_solver/core/validate_solution.m	2026-07-05 08:16:29.197348484 +0000
+@@ -12,7 +12,11 @@
+ report.endG = G(end,:);
+ report.startK = k_actual(1,:);
+ report.endK = k_actual(end,:);
+-report.duration = (size(G,1)-1) * opts.dtGrad;
++if isfield(opts,'periodic') && opts.periodic
++    report.duration = size(G,1) * opts.dtGrad;
++else
++    report.duration = (size(G,1)-1) * opts.dtGrad;
++end
+ report.feasibleGradientAxis = all(report.maxGAxis <= opts.Guse * (1 + 1e-9));
+ report.feasibleSlewAxis = all(report.maxSAxis <= opts.Suse * (1 + 1e-9));
+ report.feasibleBoundary = true;
+diff -ru /mnt/data/NC_MRSI_GradOpt_GUI_v0.2.4_periodic_core/gui/nc_mrsi_gradopt_gui.m /mnt/data/NC_MRSI_GradOpt_GUI_v0.2.5_periodic_solver/gui/nc_mrsi_gradopt_gui.m
+--- /mnt/data/NC_MRSI_GradOpt_GUI_v0.2.4_periodic_core/gui/nc_mrsi_gradopt_gui.m	2026-07-05 08:13:38.837499435 +0000
++++ /mnt/data/NC_MRSI_GradOpt_GUI_v0.2.5_periodic_solver/gui/nc_mrsi_gradopt_gui.m	2026-07-05 08:16:13.141181086 +0000
+@@ -1,7 +1,7 @@
+ function nc_mrsi_gradopt_gui()
+ %NC_MRSI_GRADOPT_GUI Interactive GUI for NC-MRSI-GradOpt.
+ %
+-% v0.2.4 periodic-MRSI correction:
++% v0.2.5 periodic-MRSI solver correction:
+ %   Npp is the number of points in ONE complete spatial trajectory period.
+ %   Nspec is the number of repeated periods and is the spectral/FID dimension.
+ %   ADC dwell samples points within the period; spectral BW = 1/(Npp*dwell).
+@@ -18,7 +18,7 @@
+ state.lastFull = [];
+ state.lastConfig = [];
+ 
+-fig = figure('Name','NC-MRSI-GradOpt GUI v0.2.4 periodic', ...
++fig = figure('Name','NC-MRSI-GradOpt GUI v0.2.5 periodic solver', ...
+     'NumberTitle','off', ...
+     'MenuBar','none', ...
+     'ToolBar','figure', ...
+@@ -96,8 +96,8 @@
+ handles.adcDelayMs = addEdit('ADC delay (ms)', '0');
+ 
+ addHeader('Optimization');
+-handles.mode = addPopup('Mode', {'fixed_duration','symmetric_fixed','direct'}, 2);
+-handles.symmetry = addPopup('Symmetry', {'antisymmetric_k','none','even_k'}, 1);
++handles.mode = addPopup('Mode', {'periodic_fixed','fixed_duration','symmetric_fixed','direct'}, 1);
++handles.symmetry = addPopup('Symmetry', {'none','antisymmetric_k','even_k'}, 1);
+ handles.safety = addEdit('Safety margin', '0.95');
+ handles.maxControl = addEdit('Max control points', '256');
+ handles.lambdaSlew = addEdit('lambda slew', '1e-8');
+@@ -245,7 +245,7 @@
+             guidata(fig, handles);
+             plotTarget(ktraj, preview, cfg);
+             setReport(reportFromTarget(ktraj, preview, cfg));
+-            setStatus('One-period target generated. For periodic MRSI, Npp is the compact period length.');
++            setStatus('One compact period generated. Npp is one period; target is not repeated for display/optimization.');
+         catch ME
+             showError(ME);
+         end
+@@ -254,7 +254,7 @@
+     function onRunOptimization(~,~)
+         handles = guidata(fig);
+         try
+-            setStatus('Optimizing ONE compact period; full MRSI readout is generated by repetition...');
++            setStatus('Optimizing ONE compact periodic waveform; full MRSI readout = repeat this period...');
+             drawnow;
+             cfg = readConfig();
+             ktraj = makeTargetKtraj(cfg, handles.state.importedKtraj);
+@@ -279,6 +279,9 @@
+             opt.symmetry = cfg.symmetry;
+             opt.forceGStartZero = true;
+             opt.forceGEndZero = true;
++            opt.forceGPeriodicEqual = true;
++            opt.periodic = cfg.periodicMrsi;
++            opt.Npp = cfg.Npp;
+             opt.safetyMargin = cfg.safety;
+             opt.maxControlPoints = cfg.maxControl;
+             opt.lambdaSlew = cfg.lambdaSlew;
+@@ -300,7 +303,7 @@
+             plotResult(result, cfg);
+             setReportFromResult(result, cfg, full);
+             if result.report.isFeasible
+-                setStatus('Optimization finished for compact period. Full readout = repeat period Nspec times.');
++                setStatus('Optimization finished for one periodic period. Full readout = repeat identical G_period Nspec times.');
+             else
+                 setStatus('Optimization finished, but feasibility check failed. See report.');
+             end
+@@ -453,7 +456,7 @@
+         switch cfg.trajType
+             case 'Rosette 2D'
+                 if cfg.periodicMrsi
+-                    p.Npp = N; p.Kmax = cfg.Kmax; p.nRadial = cfg.nRadial; p.nAngular = cfg.nAngular;
++                    p.Npp = N; p.Kmax = cfg.Kmax; p.nRadial = cfg.nRadial; p.nAngular = cfg.nAngular; p.shape = 'smooth_petal';
+                     ktraj = make_periodic_rosette_2d(p);
+                 else
+                     p.N = N; p.Kmax = cfg.Kmax; p.nRadial = cfg.nRadial; p.nAngular = cfg.nAngular;
+@@ -461,7 +464,7 @@
+                 end
+             case 'Rosette 3D'
+                 if cfg.periodicMrsi
+-                    p.Npp = N; p.Kmax = cfg.Kmax; p.nRadial = cfg.nRadial; p.nAngular = cfg.nAngular; p.phi = cfg.phiDeg*pi/180;
++                    p.Npp = N; p.Kmax = cfg.Kmax; p.nRadial = cfg.nRadial; p.nAngular = cfg.nAngular; p.phi = cfg.phiDeg*pi/180; p.shape = 'smooth_petal';
+                     ktraj = make_periodic_rosette_3d(p);
+                 else
+                     p.N = N; p.Kmax = cfg.Kmax; p.nRadial = cfg.nRadial; p.nAngular = cfg.nAngular; p.phi = cfg.phiDeg*pi/180;
+@@ -500,9 +503,15 @@
+     function preview = makePreviewFromTarget(ktraj, cfg)
+         dt = cfg.dtADC;
+         gammaBar = cfg.gammaBar_MHzT * 1e6;
+-        G = gradientFromK(ktraj, dt, gammaBar);
++        if cfg.periodicMrsi
++            G = periodicGradientFromK(ktraj, dt, gammaBar);
++            optsPreview = struct('gammaBar', gammaBar, 'dtGrad', dt);
++            kactual = integrate_periodic_gradient_samples(G, optsPreview, ktraj(1,:));
++        else
++            G = gradientFromK(ktraj, dt, gammaBar);
++            kactual = kFromGradient(G, dt, gammaBar, ktraj(1,:));
++        end
+         S = compute_slew(G, dt);
+-        kactual = kFromGradient(G, dt, gammaBar, ktraj(1,:));
+         preview = struct();
+         preview.G = G;
+         preview.S = S;
+@@ -688,7 +697,8 @@
+         lines{end+1} = sprintf('Spectral resolution: %.6g Hz', cfg.spectralResolution);
+         lines{end+1} = sprintf('Full readout: %.6g ms', cfg.readoutTimeTotal*1e3);
+         lines{end+1} = sprintf('Target samples shown: %d', size(ktraj,1));
+-        lines{end+1} = sprintf('closure |k(end)-k(1)|: %.6g', closure.deltaKTargetNorm);
++        lines{end+1} = sprintf('last sample to first sample |kN-k1|: %.6g', closure.deltaKTargetNorm);
++        lines{end+1} = sprintf('periodic moment closure |dk_next|: %.6g', closure.deltaKFromMomentNorm);
+         lines{end+1} = sprintf('direct max |G_axis|: %s mT/m', vecToStr(max(abs(preview.G),[],1)*1e3));
+         if ~isempty(preview.S)
+             lines{end+1} = sprintf('direct max |S_axis|: %s T/m/s', vecToStr(max(abs(preview.S),[],1)));
+@@ -716,8 +726,9 @@
+         lines{end+1} = sprintf('k error max: %.6g cycles/m', r.kErrorMax);
+         if isfield(result,'periodic')
+             c = result.periodic.closure;
+-            lines{end+1} = sprintf('actual period dk from moment: %.6g', c.deltaKFromMomentNorm);
++            lines{end+1} = sprintf('actual periodic moment closure |dk_next|: %.6g', c.deltaKFromMomentNorm);
+             lines{end+1} = sprintf('G boundary norm: %.6g T/m', c.GBoundaryNorm);
++            lines{end+1} = sprintf('G periodic jump norm: %.6g T/m', c.GPeriodicJumpNorm);
+         end
+         if ~isempty(full)
+             lines{end+1} = sprintf('Full repeated gradient samples: %d', full.NtotalGrad);
+@@ -835,6 +846,20 @@
+ G(2:end,:) = diff(ktraj,1,1) ./ (gammaBar * dt);
+ end
+ 
++
++function G = periodicGradientFromK(ktraj, dt, gammaBar)
++%PERIODICGRADIENTFROMK Cyclic finite-difference preview for one period.
++% G(i) maps k(i) to k(i+1), with k(N+1)=k(1).
++N = size(ktraj,1);
++D = size(ktraj,2);
++G = zeros(N,D);
++if N < 2
++    return;
++end
++G(1:N-1,:) = diff(ktraj,1,1) ./ (gammaBar * dt);
++G(N,:) = (ktraj(1,:) - ktraj(N,:)) ./ (gammaBar * dt);
++end
++
+ function k = kFromGradient(G, dt, gammaBar, k0)
+ if nargin < 4 || isempty(k0)
+     k0 = zeros(1,size(G,2));
+diff -ru /mnt/data/NC_MRSI_GradOpt_GUI_v0.2.4_periodic_core/mrsi/check_periodic_closure.m /mnt/data/NC_MRSI_GradOpt_GUI_v0.2.5_periodic_solver/mrsi/check_periodic_closure.m
+--- /mnt/data/NC_MRSI_GradOpt_GUI_v0.2.4_periodic_core/mrsi/check_periodic_closure.m	2026-07-05 08:03:59.763425220 +0000
++++ /mnt/data/NC_MRSI_GradOpt_GUI_v0.2.5_periodic_solver/mrsi/check_periodic_closure.m	2026-07-05 08:15:49.430866792 +0000
+@@ -1,29 +1,51 @@
+ function report = check_periodic_closure(ktraj, G, opts)
+-%CHECK_PERIODIC_CLOSURE Report closure/moment consistency for one period.
++%CHECK_PERIODIC_CLOSURE Report periodic closure/moment consistency.
++%
++% For periodic MRSI, ktraj contains Npp unique samples inside [0,T). The
++% duplicated endpoint at T is not stored. The final gradient sample closes the
++% trajectory from k(Npp) to k(1) of the next period.
+ 
+ if nargin < 3
+     opts = struct();
+ end
+ report = struct();
+ report.kStart = ktraj(1,:);
+-report.kEnd = ktraj(end,:);
+-report.deltaKTarget = ktraj(end,:) - ktraj(1,:);
+-report.deltaKTargetNorm = norm(report.deltaKTarget);
++report.kEndSample = ktraj(end,:);
++report.deltaKLastSampleToStart = ktraj(end,:) - ktraj(1,:);
++report.deltaKTargetNorm = norm(report.deltaKLastSampleToStart);
+ 
+ if nargin >= 2 && ~isempty(G)
++    report.GStart = G(1,:);
++    report.GEnd = G(end,:);
++    report.GBoundaryNorm = norm(G(1,:)) + norm(G(end,:));
++    report.GPeriodicJump = G(1,:) - G(end,:);
++    report.GPeriodicJumpNorm = norm(report.GPeriodicJump);
++
+     if isfield(opts,'gammaBar') && isfield(opts,'dtGrad')
+         moment = sum(G,1) * opts.dtGrad;
+         report.gradientMoment = moment;
+         report.deltaKFromMoment = opts.gammaBar * moment;
+         report.deltaKFromMomentNorm = norm(report.deltaKFromMoment);
++        report.kNextStartFromGradient = ktraj(1,:) + report.deltaKFromMoment;
++        report.kNextStartError = report.kNextStartFromGradient - ktraj(1,:);
++        report.kNextStartErrorNorm = norm(report.kNextStartError);
++        report.closedByMoment = report.kNextStartErrorNorm;
+     else
+         report.gradientMoment = sum(G,1);
+         report.deltaKFromMoment = [];
+         report.deltaKFromMomentNorm = NaN;
++        report.kNextStartErrorNorm = NaN;
++        report.closedByMoment = NaN;
++    end
++
++    if size(G,1) > 1 && isfield(opts,'dtGrad')
++        dG = [diff(G,1,1); G(1,:) - G(end,:)];
++        report.maxCyclicSlewAxis = max(abs(dG ./ opts.dtGrad), [], 1);
++        report.maxCyclicSlewNorm = max(sqrt(sum((dG ./ opts.dtGrad).^2,2)));
++    else
++        report.maxCyclicSlewAxis = [];
++        report.maxCyclicSlewNorm = NaN;
+     end
+-    report.GStart = G(1,:);
+-    report.GEnd = G(end,:);
+-    report.GBoundaryNorm = norm(G(1,:)) + norm(G(end,:));
+ else
+     report.gradientMoment = [];
+     report.deltaKFromMoment = [];
+@@ -31,5 +53,10 @@
+     report.GStart = [];
+     report.GEnd = [];
+     report.GBoundaryNorm = NaN;
++    report.GPeriodicJump = [];
++    report.GPeriodicJumpNorm = NaN;
++    report.kNextStartErrorNorm = NaN;
++    report.maxCyclicSlewAxis = [];
++    report.maxCyclicSlewNorm = NaN;
+ end
+ end
+diff -ru /mnt/data/NC_MRSI_GradOpt_GUI_v0.2.4_periodic_core/mrsi/setup_periodic_mrsi_readout.m /mnt/data/NC_MRSI_GradOpt_GUI_v0.2.5_periodic_solver/mrsi/setup_periodic_mrsi_readout.m
+--- /mnt/data/NC_MRSI_GradOpt_GUI_v0.2.4_periodic_core/mrsi/setup_periodic_mrsi_readout.m	2026-07-05 08:03:59.746054674 +0000
++++ /mnt/data/NC_MRSI_GradOpt_GUI_v0.2.5_periodic_solver/mrsi/setup_periodic_mrsi_readout.m	2026-07-05 08:15:42.246323532 +0000
+@@ -34,9 +34,10 @@
+ acq.periodTime = Npp * adcDwell;
+ acq.spectralBW = 1 / acq.periodTime;
+ acq.spectralResolution = acq.spectralBW / Nspec;
+-acq.readoutTimePeriod = (Npp - 1) * adcDwell;
++acq.readoutTimePeriod = Npp * adcDwell;
+ acq.readoutTimeTotal = acq.nADCtotal * adcDwell;
+ acq.readoutTime = acq.readoutTimePeriod;
+ acq.adcDelay = p.Results.adcDelay;
+ acq.adcStartMode = 'periodic_start';
++acq.isPeriodic = true;
+ end
+diff -ru /mnt/data/NC_MRSI_GradOpt_GUI_v0.2.4_periodic_core/nc_mrsi_gradopt.m /mnt/data/NC_MRSI_GradOpt_GUI_v0.2.5_periodic_solver/nc_mrsi_gradopt.m
+--- /mnt/data/NC_MRSI_GradOpt_GUI_v0.2.4_periodic_core/nc_mrsi_gradopt.m	2026-07-05 08:03:43.178608668 +0000
++++ /mnt/data/NC_MRSI_GradOpt_GUI_v0.2.5_periodic_solver/nc_mrsi_gradopt.m	2026-07-05 08:15:42.246099084 +0000
+@@ -51,24 +51,34 @@
+ ktraj_target = validate_ktraj_input(ktraj_target);
+ ktraj_grad = preprocess_ktraj(ktraj_target, opts);
+ 
+-switch lower(opts.mode)
+-    case 'direct'
+-        G = k2grad_direct(ktraj_grad, opts);
+-    case 'fixed_duration'
+-        G = fixed_duration_optimize(ktraj_grad, opts);
+-    case 'symmetric_fixed'
+-        G = symmetric_fixed_duration_optimize(ktraj_grad, opts);
+-    otherwise
+-        error('Unknown opt.mode: %s', opts.mode);
+-end
++if opts.periodic || strcmpi(opts.mode, 'periodic_fixed')
++    % Periodic MRSI: optimize exactly one compact period. Do not treat the
++    % repeated FID readout as a long non-periodic trajectory.
++    G = periodic_fixed_duration_optimize(ktraj_grad, opts);
++else
++    switch lower(opts.mode)
++        case 'direct'
++            G = k2grad_direct(ktraj_grad, opts);
++        case 'fixed_duration'
++            G = fixed_duration_optimize(ktraj_grad, opts);
++        case 'symmetric_fixed'
++            G = symmetric_fixed_duration_optimize(ktraj_grad, opts);
++        otherwise
++            error('Unknown opt.mode: %s', opts.mode);
++    end
+ 
+-G = enforce_boundary_conditions(G, opts);
+-if ~strcmpi(opts.symmetry, 'none') && contains(lower(opts.mode), 'symmetric')
+-    G = enforce_gradient_symmetry(G, opts.symmetry);
++    G = enforce_boundary_conditions(G, opts);
++    if ~strcmpi(opts.symmetry, 'none') && contains(lower(opts.mode), 'symmetric')
++        G = enforce_gradient_symmetry(G, opts.symmetry);
++    end
+ end
+ 
+ S = compute_slew(G, opts.dtGrad);
+-ktraj_actual = integrate_gradient(G, opts, ktraj_grad(1,:));
++if opts.periodic || strcmpi(opts.mode, 'periodic_fixed')
++    ktraj_actual = integrate_periodic_gradient_samples(G, opts, ktraj_grad(1,:));
++else
++    ktraj_actual = integrate_gradient(G, opts, ktraj_grad(1,:));
++end
+ ktraj_adc = sample_ktraj_at_adc(ktraj_actual, opts);
+ report = validate_solution(G, S, ktraj_actual, ktraj_grad, opts);
+ 
+diff -ru /mnt/data/NC_MRSI_GradOpt_GUI_v0.2.4_periodic_core/trajectories/make_periodic_rosette_2d.m /mnt/data/NC_MRSI_GradOpt_GUI_v0.2.5_periodic_solver/trajectories/make_periodic_rosette_2d.m
+--- /mnt/data/NC_MRSI_GradOpt_GUI_v0.2.4_periodic_core/trajectories/make_periodic_rosette_2d.m	2026-07-05 08:03:59.772303132 +0000
++++ /mnt/data/NC_MRSI_GradOpt_GUI_v0.2.5_periodic_solver/trajectories/make_periodic_rosette_2d.m	2026-07-05 08:15:27.241100574 +0000
+@@ -1,20 +1,35 @@
+ function ktraj = make_periodic_rosette_2d(params)
+-%MAKE_PERIODIC_ROSETTE_2D Generate one closed rosette period for MRSI.
+-%
+-% Unlike an arbitrary long readout, this returns one compact period. The
+-% samples include a closed endpoint so that k(1) and k(end) coincide. In the
+-% full MRSI readout this compact period is repeated Nspec times.
++%MAKE_PERIODIC_ROSETTE_2D Generate ONE compact 2D rosette period for MRSI.
++% Returns Npp unique samples over [0,Tperiod), without duplicated endpoint.
++% Default shape uses q(u)=sin(pi*u)^2 to avoid the signed-sine two-lobe
++% appearance when the user intends one spatial period.
+ 
+ Npp = getp(params, 'Npp', getp(params, 'N', 96));
+ Kmax = getp(params, 'Kmax', 25);
+ nRadial = getp(params, 'nRadial', 1);
+ nAngular = getp(params, 'nAngular', 1);
+ phase = getp(params, 'phase', 0);
++shape = getp(params, 'shape', 'smooth_petal');
++
++Npp = round(Npp);
++if Npp < 4
++    error('Npp must be at least 4 for a periodic rosette period.');
++end
++
++u = (0:Npp-1).' / Npp;
++switch lower(shape)
++    case {'smooth_petal','sin2','sin_squared'}
++        q = Kmax * sin(pi*nRadial*u).^2;
++    case {'signed_sine','paper_signed'}
++        q = Kmax * sin(2*pi*nRadial*u);
++    otherwise
++        error('Unknown periodic rosette shape: %s', shape);
++end
+ 
+-u = linspace(0, 1, Npp).';
+-r = Kmax * sin(2*pi*nRadial*u);
+ theta = 2*pi*nAngular*u + phase;
+-ktraj = [r .* cos(theta), r .* sin(theta)];
++kx = q .* cos(theta);
++ky = q .* sin(theta);
++ktraj = [kx, ky];
+ end
+ 
+ function v = getp(s, name, defaultValue)
+diff -ru /mnt/data/NC_MRSI_GradOpt_GUI_v0.2.4_periodic_core/trajectories/make_periodic_rosette_3d.m /mnt/data/NC_MRSI_GradOpt_GUI_v0.2.5_periodic_solver/trajectories/make_periodic_rosette_3d.m
+--- /mnt/data/NC_MRSI_GradOpt_GUI_v0.2.4_periodic_core/trajectories/make_periodic_rosette_3d.m	2026-07-05 08:03:59.779972934 +0000
++++ /mnt/data/NC_MRSI_GradOpt_GUI_v0.2.5_periodic_solver/trajectories/make_periodic_rosette_3d.m	2026-07-05 08:15:27.231833596 +0000
+@@ -1,8 +1,19 @@
+ function ktraj = make_periodic_rosette_3d(params)
+-%MAKE_PERIODIC_ROSETTE_3D Generate one closed 3D rosette period for MRSI.
++%MAKE_PERIODIC_ROSETTE_3D Generate ONE compact 3D rosette period for MRSI.
+ %
+-% Npp is the number of points in one complete periodic spatial trajectory.
+-% Nspec is handled outside this function by period repetition.
++% This function returns Npp UNIQUE samples over one periodic interval
++% [0, Tperiod). It does NOT include the duplicated endpoint at u=1.
++%
++% The default periodic-MRSI rosette uses a non-negative smooth envelope
++% q(u)=sin(pi*u)^2 so the displayed target is one compact period, not two
++% positive/negative radial half-cycles.
++%
++% kx = Kmax*q(u)*cos(phi)*cos(theta)
++% ky = Kmax*q(u)*cos(phi)*sin(theta)
++% kz = Kmax*q(u)*sin(phi)
++%
++% Full MRSI readout is generated outside this function by repeating this
++% compact period Nspec times.
+ 
+ Npp = getp(params, 'Npp', getp(params, 'N', 96));
+ Kmax = getp(params, 'Kmax', 25);
+@@ -10,13 +21,32 @@
+ nAngular = getp(params, 'nAngular', 1);
+ phi = getp(params, 'phi', 0);
+ phase = getp(params, 'phase', 0);
++shape = getp(params, 'shape', 'smooth_petal');
++
++Npp = round(Npp);
++if Npp < 4
++    error('Npp must be at least 4 for a periodic rosette period.');
++end
++
++% Unique periodic samples: 0, 1/Npp, ..., (Npp-1)/Npp.
++u = (0:Npp-1).' / Npp;
++
++switch lower(shape)
++    case {'smooth_petal','sin2','sin_squared'}
++        % One smooth center-out-center petal per radial oscillation.
++        q = Kmax * sin(pi*nRadial*u).^2;
++    case {'signed_sine','paper_signed'}
++        % Signed sine is kept as an option for formula comparison; it can look
++        % like two lobes in k-space and is not the default GUI mode.
++        q = Kmax * sin(2*pi*nRadial*u);
++    otherwise
++        error('Unknown periodic rosette shape: %s', shape);
++end
+ 
+-u = linspace(0, 1, Npp).';
+-r = Kmax * sin(2*pi*nRadial*u);
+ theta = 2*pi*nAngular*u + phase;
+-kx = r .* cos(phi) .* cos(theta);
+-ky = r .* cos(phi) .* sin(theta);
+-kz = r .* sin(phi);
++kx = q .* cos(phi) .* cos(theta);
++ky = q .* cos(phi) .* sin(theta);
++kz = q .* sin(phi);
+ ktraj = [kx, ky, kz];
+ end
+ 
