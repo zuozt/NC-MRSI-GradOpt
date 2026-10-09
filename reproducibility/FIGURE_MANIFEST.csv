@@ -1,0 +1,7 @@
+figure_id,description,script,input,output,status
+DEMO-01,PETALUTE 2D/3D target,make_demo_figures.m,built-in explicit parameters,demo/demo_petalute_paper.png,provided_unverified
+DEMO-02,Legacy sin-squared 2D/3D target,make_demo_figures.m,built-in explicit parameters,demo/demo_legacy_sin2.png,provided_unverified
+MAIN-FIG-1,TBME method schematic,TBD,TBD,TBD,missing_source
+MAIN-FIG-2,TBME rosette analysis,TBD,TBD,TBD,missing_source
+MAIN-FIG-3,TBME CRT and four-toolbox comparison,TBD,TBD,TBD,missing_source
+SUPP-FIG-S1-S5,Supplementary figures,TBD,TBD,TBD,missing_source
